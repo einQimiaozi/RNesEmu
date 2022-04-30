@@ -19,6 +19,7 @@
 /// 6502 cpu instructions book: http://49.212.183.201/6502/6502_report.htm
 
 use std::borrow::Borrow;
+use std::num::FpCategory::Zero;
 use std::ops::Add;
 use crate::adressing_modes::AddrMode;
 use crate::ops_codes::*;
@@ -53,6 +54,48 @@ impl CPU {
             memory: [0; 0xFFFF],
         }
     }
+    fn set_status_carry(&mut self) {
+        self.status |= CARRY;
+    }
+    fn clear_status_carry(&mut self) {
+        self.status &= !CARRY;
+    }
+    fn set_status_zero(&mut self) {
+        self.status |= ZERO;
+    }
+    fn clear_status_zero(&mut self) {
+        self.status &= !ZERO;
+    }
+    fn set_status_interrupt(&mut self) {
+        self.status |= INTERRUPT;
+    }
+    fn clear_status_interrupt(&mut self) {
+        self.status &= !INTERRUPT;
+    }
+    fn set_status_deciaml(&mut self) {
+        self.status |= DECIMAL;
+    }
+    fn clear_status_decimal(&mut self) {
+        self.status &= !DECIMAL;
+    }
+    fn set_status_break(&mut self) {
+        self.status |= BREAK;
+    }
+    fn clear_status_break(&mut self) {
+        self.status &= !BREAK;
+    }
+    fn set_status_overflow(&mut self) {
+        self.status |= OVERFLOW;
+    }
+    fn clear_status_overflow(&mut self) {
+        self.status &= !OVERFLOW;
+    }
+    fn set_status_negative(&mut self) {
+        self.status |= NEGATIVE;
+    }
+    fn clear_status_negative(&mut self) {
+        self.status &= !NEGATIVE;
+    }
     fn memory_read(&self, pos: u16) -> u8 {
         self.memory[pos as usize]
     }
@@ -84,15 +127,15 @@ impl CPU {
     fn calc_token(&mut self,result: u8) {
         // Token:Z -> This bit is set when the 7th binary bit of ops_code is 0. Otherwise it will be cleared.
         if result == 0 {
-            self.status = self.status | 0b0000_0010;
+            self.set_status_zero();
         }else {
-            self.status = self.status & 0b1111_1101;
+            self.clear_status_zero();
         }
         // Token:N -> When the high bit of the ops_code is set (negative), this bit is set, otherwise it is cleared.
         if result & 0b1000_0000 != 0 {
-            self.status = self.status | 0b1000_0000;
+            self.set_status_negative();
         }else {
-            self.status = self.status & 0b0111_1111;
+            self.clear_status_negative();
         }
     }
     fn get_operand_addr(&mut self,mode: &AddrMode) -> u16 {
@@ -148,22 +191,36 @@ impl CPU {
         };
         let sum = self.accumulator as u16 + data as u16 + carry_out;
         if sum > 255 {
-            // set carry out
-            self.status |= CARRY;
+            self.set_status_carry();
         }else {
-            // remove carry out
-            self.status &= (!CARRY as u8);
+            self.clear_status_carry();
         }
 
         let sum = sum as u8;
         if (sum ^ data) & (sum ^ self.accumulator) & 0b1000_0000 != 0 {
-            // overflow
-            self.status |= OVERFLOW;
+            self.set_status_overflow();
         }else {
-            // not to overflow
-            self.status &= (!OVERFLOW as u8);
+            self.clear_status_overflow();
         }
         self.set_accumulator(data);
+    }
+    // branch specifies the target of conditional transfer.
+    // The second byte of the instruction becomes an operand
+    // and is added as an offset to the instruction pointer to the next instruction.
+    fn branch(&mut self) {
+        let offset = self.memory_read(self.program_counter) as i8;
+        let next = self.program_counter.wrapping_add(1).wrapping_add(offset as u16);
+        self.program_counter = next;
+    }
+    fn compare(&mut self,register: u8,mode: &AddrMode) {
+        let addr = self.get_operand_addr(mode);
+        let data = self.memory_read(addr);
+        if data <= register {
+            self.set_status_carry();
+        }else {
+            self.clear_status_carry();
+        }
+        self.calc_token(register.wrapping_sub(data));
     }
     fn adc(&mut self,mode: &AddrMode) {
         let addr = self.get_operand_addr(mode);
@@ -174,6 +231,100 @@ impl CPU {
         let addr = self.get_operand_addr(mode);
         let data = self.memory_read(addr);
         self.set_accumulator(self.accumulator & data);
+    }
+    fn asl(&mut self,mode: &AddrMode) {
+        match mode {
+            AddrMode::Accumulator => {
+                if self.accumulator >> 7 & 1 != 0 {
+                    self.set_status_carry();
+                }else {
+                    self.clear_status_carry();
+                }
+                self.set_accumulator(self.accumulator << 1)
+            },
+            _ => {
+                let addr = self.get_operand_addr(mode);
+                let data = self.memory_read(addr);
+                if data >> 7 & 1 != 0 {
+                    self.set_status_carry();
+                }else {
+                    self.clear_status_carry();
+                }
+                self.memory_write(addr,data);
+                self.calc_token(data);
+            }
+        }
+    }
+    fn bcc(&mut self) {
+        if self.status & 1 == 0 {
+            self.branch();
+        }
+    }
+    fn bcs(&mut self) {
+        if self.status & 1 != 0 {
+            self.branch();
+        }
+    }
+    fn beq(&mut self) {
+        if self.status >> 1 & 1 != 0 {
+            self.branch()
+        }
+    }
+    fn bne(&mut self) {
+        if self.status >> 1 & 1 == 0 {
+            self.branch();
+        }
+    }
+    fn bit(&mut self,mode: &AddrMode) {
+        let addr = self.get_operand_addr(mode);
+        let data = self.memory_read(addr);
+        if data >> 7 & 1 != 0 {
+            self.set_status_negative();
+        }else {
+            self.clear_status_negative();
+        }
+        if data >> 6 & 1 != 0 {
+            self.set_status_overflow();
+        }else {
+            self.clear_status_overflow();
+        }
+        if !(self.accumulator & data) == 0 {
+            self.clear_status_zero();
+        }else {
+            self.set_status_zero();
+        }
+    }
+    fn bmi(&mut self) {
+        if self.status >> 7 & 1 != 0 {
+            self.branch();
+        }
+    }
+    fn bpl(&mut self) {
+        if self.status >> 7 & 1 == 0 {
+            self.branch();
+        }
+    }
+    fn bvc(&mut self) {
+        if self.status >> 6 & 1 == 0 {
+            self.branch();
+        }
+    }
+    fn bvs(&mut self) {
+        if self.status >> 6 & 1 != 0 {
+            self.branch();
+        }
+    }
+    fn clc(&mut self) {
+        self.clear_status_carry();
+    }
+    fn cld(&mut self) {
+        self.clear_status_decimal();
+    }
+    fn cli(&mut self) {
+        self.clear_status_interrupt();
+    }
+    fn clv(&mut self) {
+        self.clear_status_overflow();
     }
     fn lda(&mut self,mode: &AddrMode) {
         let addr = self.get_operand_addr(mode);
@@ -231,6 +382,7 @@ impl CPU {
                 0xE8 => self.inx(),
                 _ => todo!()
             }
+
             self.program_counter += (ops_code.bytes-1) as u16;
         }
     }
