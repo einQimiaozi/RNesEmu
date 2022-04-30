@@ -42,18 +42,22 @@ pub static INTERRUPT: u8 = 0b0000_0100;
 pub static ZERO: u8 = 0b0000_0010;
 pub static CARRY: u8 = 0b0000_0001;
 
+pub static STACK_PTR_START:u16 = 0x01FF;
+pub static STACK_PTR_END:u16 = 0x0100;
+
 impl CPU {
     pub fn new() -> Self {
         CPU {
             accumulator: 0,
             register_x: 0,
             register_y: 0,
-            stack_ptr: 0,
+            stack_ptr: 0x00FD,
             status: 0,
             program_counter: 0,
             memory: [0; 0xFFFF],
         }
     }
+    // status op
     fn set_status_carry(&mut self) {
         self.status |= CARRY;
     }
@@ -96,6 +100,7 @@ impl CPU {
     fn clear_status_negative(&mut self) {
         self.status &= !NEGATIVE;
     }
+    // memory op
     fn memory_read(&self, pos: u16) -> u8 {
         self.memory[pos as usize]
     }
@@ -111,6 +116,7 @@ impl CPU {
         self.memory_write(pos,low);
         self.memory_write(pos+1,high);
     }
+    // other op
     fn load_program(&mut self,program: Vec<u8>) {
         self.memory[0x8000..(0x8000+program.len())].copy_from_slice(&program);
         self.memory_write_u16(0xFFFC,0x8000);
@@ -120,7 +126,7 @@ impl CPU {
         self.register_x = 0;
         self.register_y = 0;
         self.accumulator = 0;
-        self.stack_ptr = 0;
+        self.stack_ptr = 0x00FD;
 
         self.program_counter = self.memory_read_u16(0xFFFC);
     }
@@ -222,6 +228,28 @@ impl CPU {
         }
         self.calc_token(register.wrapping_sub(data));
     }
+    // stack op
+    fn stack_pop(&mut self) -> u8 {
+        self.stack_ptr = self.stack_ptr.wrapping_add(1);
+        let res = self.memory_read(STACK_PTR_END + self.stack_ptr as u16);
+        res
+    }
+    fn stack_pop_u16(&mut self) -> u16 {
+        let low_bits = self.stack_pop() as u16;
+        let high_bits = self.stack_pop() as u16;
+        high_bits << 8 | low_bits
+    }
+    fn stack_push(&mut self,data: u8) {
+        self.memory_write(STACK_PTR_END + self.stack_ptr as u16,data);
+        self.stack_ptr = self.stack_ptr.wrapping_sub(1);
+    }
+    fn stack_push_u16(&mut self,data: u16) {
+        let high_bits = (data >> 8) as u8;
+        let low_bits = (data & 0x00ff) as u8;
+        self.stack_push(high_bits);
+        self.stack_push(low_bits);
+    }
+    // 6502 instructions
     fn adc(&mut self,mode: &AddrMode) {
         let addr = self.get_operand_addr(mode);
         let data = self.memory_read(addr);
@@ -326,6 +354,68 @@ impl CPU {
     fn clv(&mut self) {
         self.clear_status_overflow();
     }
+    fn cmp(&mut self,mode: &AddrMode) {
+        self.compare(self.accumulator,mode);
+    }
+    fn cpx(&mut self, mode: &AddrMode) {
+        self.compare(self.register_x,mode);
+    }
+    fn cpy(&mut self,mode: &AddrMode) {
+        self.compare(self.register_y,mode);
+    }
+    fn dec(&mut self,mode: &AddrMode) {
+        let addr = self.get_operand_addr(mode);
+        let data = self.memory_read(addr).wrapping_sub(1);
+        self.memory_write(addr,data);
+        self.calc_token(data);
+    }
+    fn dex(&mut self) {
+        self.register_x = self.register_x.wrapping_sub(1);
+        self.calc_token(self.register_x);
+    }
+    fn dey(&mut self) {
+        self.register_y = self.register_y.wrapping_sub(1);
+        self.calc_token(self.register_y);
+    }
+    fn eor(&mut self,mode: &AddrMode) {
+        let addr = self.get_operand_addr(mode);
+        let data = self.memory_read(addr);
+        self.accumulator = self.accumulator ^ data;
+        self.calc_token(self.accumulator);
+    }
+    fn inc(&mut self,mode: &AddrMode) {
+        let addr = self.get_operand_addr(mode);
+        let data = self.memory_read(addr).wrapping_add(1);
+        self.memory_write(addr,data);
+        self.calc_token(data);
+    }
+    fn inx(&mut self) {
+        self.register_x.wrapping_add(1);
+        self.calc_token(self.register_x);
+    }
+    fn iny(&mut self) {
+        self.register_y.wrapping_add(1);
+        self.calc_token(self.register_y);
+    }
+    fn jmp(&mut self,mode :&AddrMode) {
+        match mode {
+            AddrMode::Absolute => self.program_counter = self.memory_read_u16(self.program_counter),
+            _ => {
+                let addr = self.memory_read_u16(self.program_counter);
+                // if addr ends with FF, the high and low bits are processed respectively
+                self.program_counter = if addr & 0x00FF == 0x00FF {
+                    let low_bits = self.memory_read(addr);
+                    let high_bits = self.memory_read(addr & 0xFF00);
+                    (high_bits as u16) << 8 | (low_bits as u16)
+                }else {
+                    self.memory_read_u16(addr)
+                };
+            }
+        }
+    }
+    fn jsr(&mut self,mode: &AddrMode) {
+        let data = self.memory_read_u16(self.program_counter);
+    }
     fn lda(&mut self,mode: &AddrMode) {
         let addr = self.get_operand_addr(mode);
         let data = self.memory_read(addr);
@@ -339,22 +429,6 @@ impl CPU {
         self.register_y = self.accumulator;
         self.calc_token(self.register_y);
     }
-    fn inx(&mut self) {
-        if self.register_x >= 255 {
-            self.register_x = 0
-        }else {
-            self.register_x += 1
-        }
-        self.calc_token(self.register_x);
-    }
-    fn iny(&mut self) {
-        if self.register_y >= 255 {
-            self.register_y = 0
-        }else {
-            self.register_y += 1
-        }
-        self.calc_token(self.register_y);
-    }
     fn sta(&mut self,mode: &AddrMode) {
         let addr = self.get_operand_addr(mode);
         self.memory_write(addr,self.accumulator);
@@ -363,6 +437,7 @@ impl CPU {
         loop {
             let ops_addr = self.memory_read(self.program_counter);
             self.program_counter += 1;
+            let program_counter_backup = self.program_counter;
             let ops_code = OpCodesMap.get(&ops_addr).unwrap();
             let mode = ops_code.addressing_mode.borrow();
             match ops_code.opc {
@@ -382,8 +457,10 @@ impl CPU {
                 0xE8 => self.inx(),
                 _ => todo!()
             }
-
-            self.program_counter += (ops_code.bytes-1) as u16;
+            // If the program counter is modified in the opcode, it will not be processed separately
+            if self.program_counter == program_counter_backup {
+                self.program_counter += (ops_code.bytes - 1) as u16;
+            }
         }
     }
     fn load_and_run(&mut self,program: Vec<u8>) {
