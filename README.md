@@ -1,6 +1,6 @@
 | language                        | 
 |:--------------------------------|
-| <a href='README_ch.md'>简体中文</a> |
+| <a href='https://github.com/einQimiaozi/RNesEmu/blob/master/README_ch.md'>简体中文</a> |
 | English                         |
 
 RNesEmu is a NES simulator developed based on rust language.
