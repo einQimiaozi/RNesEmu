@@ -1,4 +1,4 @@
-use crate::adressing_modes::AddrMode;
+use crate::addressing_modes::AddrMode;
 use std::collections::HashMap;
 
 pub struct OpCode {

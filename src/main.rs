@@ -1,6 +1,6 @@
 mod cpu;
 mod ops_codes;
-mod adressing_modes;
+mod addressing_modes;
 
 #[macro_use]
 extern crate lazy_static;

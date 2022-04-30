@@ -21,7 +21,7 @@
 use std::borrow::Borrow;
 use std::num::FpCategory::Zero;
 use std::ops::Add;
-use crate::adressing_modes::AddrMode;
+use crate::addressing_modes::AddrMode;
 use crate::ops_codes::*;
 
 pub struct CPU {
