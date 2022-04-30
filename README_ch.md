@@ -1,28 +1,28 @@
 | language                        | 
 |:--------------------------------|
 | 简体中文                            |
-| <a href='README.md'>English</a> |
+| <a href='https://github.com/einQimiaozi/RNesEmu/blob/master/README.md'>English</a> |
 
-RNesEmu is a NES simulator developed based on rust language.
+RNesEmu是基于rust语言开发的NES模拟器。
 
-At present, the project is under development.
+目前，该项目正在开发中。
 
-## Project Structure
+## 项目结构
 
 cpu.rs:
-- simulates 6502 CPU, including all common instructions
-- currently under development.
+-模拟6502 CPU，包括所有常用指令
+-目前正在开发中。
 
 addressing_modes.rs:
-- Including 15 addressing modes supported by 6502.
+-包括6502支持的15种寻址模式。
 
 ops_codes.rs:
-- It contains the hexadecimal operation code, operand and other information corresponding to all instructions.
+-它包含与所有指令对应的十六进制操作码、操作数和其他信息。
 
-At present, I am the only one to develop the project, and the overall progress is slow. If you are interested in hardware simulation or rust language, you are welcome to join the project!
+目前，我是唯一一个开发该项目的人，总体进度缓慢。如果你对硬件模拟或rust语言感兴趣，欢迎你加入这个项目！
 
-## Development Log
+## 开发日志
 
-2022.04.29: created this project
+2022.04.29：项目创建了！！
 
-2022.04.30: Several instructions about CPU are added, the code related to stack operation
+2022.04.30：增加了几个关于CPU的指令，完善了与栈操作相关的代码
